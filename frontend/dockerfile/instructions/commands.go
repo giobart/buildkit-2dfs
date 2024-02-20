@@ -480,6 +480,19 @@ type ShellCommand struct {
 	Shell strslice.StrSlice
 }
 
+// TwoDfsCommand copies the 2d filesystem from the provided .tar.gz to the target file
+//
+//		2DFS foo.tar.gz /foo.txt
+//	 foo.tar.gz contains the actual files and a manifest.json describing the 2d file structure
+type TwoDfsCommand struct {
+	withNameAndCode
+	SourcesAndDest
+	From     string
+	Chown    string
+	Chmod    string
+	Checksum string
+}
+
 // Stage represents a bundled collection of commands.
 //
 // Each stage begins with a FROM command (which is consumed into the Stage),

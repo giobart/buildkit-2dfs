@@ -213,6 +213,7 @@ func init() {
 		command.User:        parseString,
 		command.Volume:      parseMaybeJSONToList,
 		command.Workdir:     parseString,
+		command.TwoDfs:      parseMaybeJSONToList,
 	}
 }
 

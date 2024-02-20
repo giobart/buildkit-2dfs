@@ -107,6 +107,8 @@ func ParseInstruction(node *parser.Node) (v interface{}, err error) {
 		return parseArg(req)
 	case command.Shell:
 		return parseShell(req)
+	case command.TwoDfs:
+		return parseTwoDfs(req)
 	}
 	return nil, suggest.WrapError(&UnknownInstructionError{Instruction: node.Value, Line: node.StartLine}, node.Value, allInstructionNames(), false)
 }
@@ -737,6 +739,33 @@ func parseShell(req parseRequest) (*ShellCommand, error) {
 		// SHELL powershell -command - not JSON
 		return nil, errNotJSON("SHELL", req.original)
 	}
+}
+
+func parseTwoDfs(req parseRequest) (*TwoDfsCommand, error) {
+	if len(req.args) < 2 {
+		return nil, errNoDestinationArgument("2DFS")
+	}
+	flChown := req.flags.AddString("chown", "")
+	flFrom := req.flags.AddString("from", "")
+	flChmod := req.flags.AddString("chmod", "")
+	flChecksum := req.flags.AddString("checksum", "")
+	if err := req.flags.Parse(); err != nil {
+		return nil, err
+	}
+
+	sourcesAndDest, err := parseSourcesAndDest(req, "2DFS")
+	if err != nil {
+		return nil, err
+	}
+
+	return &TwoDfsCommand{
+		withNameAndCode: newWithNameAndCode(req),
+		SourcesAndDest:  *sourcesAndDest,
+		From:            flFrom.Value,
+		Chown:           flChown.Value,
+		Chmod:           flChmod.Value,
+		Checksum:        flChecksum.Value,
+	}, nil
 }
 
 func errAtLeastOneArgument(command string) error {

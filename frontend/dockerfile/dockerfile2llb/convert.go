@@ -822,6 +822,33 @@ func dispatch(d *dispatchState, cmd command, opt dispatchOpt) error {
 				}
 			}
 		}
+	case *instructions.TwoDfsCommand:
+		var checksum digest.Digest
+		if c.Checksum != "" {
+			checksum, err = digest.Parse(c.Checksum)
+		}
+		if err == nil {
+			err = dispatchCopy(d, copyConfig{
+				params:       c.SourcesAndDest,
+				source:       opt.buildContext,
+				isAddCommand: true,
+				cmdToPrint:   c,
+				chown:        c.Chown,
+				chmod:        c.Chmod,
+				link:         false,
+				keepGitDir:   false,
+				checksum:     checksum,
+				location:     c.Location(),
+				opt:          opt,
+			})
+		}
+		if err == nil {
+			for _, src := range c.SourcePaths {
+				if !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://") {
+					d.ctxPaths[path.Join("/", filepath.ToSlash(src))] = struct{}{}
+				}
+			}
+		}
 	default:
 	}
 	return err

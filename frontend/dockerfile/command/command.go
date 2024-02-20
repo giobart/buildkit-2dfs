@@ -21,6 +21,7 @@ const (
 	User        = "user"
 	Volume      = "volume"
 	Workdir     = "workdir"
+	TwoDfs      = "2dfs"
 )
 
 // Commands is list of all Dockerfile commands
@@ -43,4 +44,5 @@ var Commands = map[string]struct{}{
 	User:        {},
 	Volume:      {},
 	Workdir:     {},
+	TwoDfs:      {},
 }
