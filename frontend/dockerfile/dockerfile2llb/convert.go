@@ -823,31 +823,14 @@ func dispatch(d *dispatchState, cmd command, opt dispatchOpt) error {
 			}
 		}
 	case *instructions.TwoDfsCommand:
-		var checksum digest.Digest
-		if c.Checksum != "" {
-			checksum, err = digest.Parse(c.Checksum)
-		}
 		if err == nil {
-			err = dispatchCopy(d, copyConfig{
-				params:       c.SourcesAndDest,
-				source:       opt.buildContext,
-				isAddCommand: true,
-				cmdToPrint:   c,
-				chown:        c.Chown,
-				chmod:        c.Chmod,
-				link:         false,
-				keepGitDir:   false,
-				checksum:     checksum,
-				location:     c.Location(),
-				opt:          opt,
+			err = dispatch2dfs(d, copyConfig{
+				params:     c.SourcesAndDest,
+				source:     opt.buildContext,
+				cmdToPrint: c,
+				location:   c.Location(),
+				opt:        opt,
 			})
-		}
-		if err == nil {
-			for _, src := range c.SourcePaths {
-				if !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://") {
-					d.ctxPaths[path.Join("/", filepath.ToSlash(src))] = struct{}{}
-				}
-			}
 		}
 	default:
 	}
@@ -1940,4 +1923,87 @@ func isEnabledForStage(stage string, value string) bool {
 		}
 	}
 	return false
+}
+
+func dispatch2dfs(d *dispatchState, cfg copyConfig) error {
+	dest, err := pathRelativeToWorkingDir(d.state, cfg.params.DestPath, *d.platform)
+	if err != nil {
+		return err
+	}
+
+	if cfg.params.DestPath == "." || cfg.params.DestPath == "" || cfg.params.DestPath[len(cfg.params.DestPath)-1] == filepath.Separator {
+		dest += string(filepath.Separator)
+	}
+
+	var copyOpt []llb.CopyOption
+
+	commitMessage := bytes.NewBufferString("")
+	commitMessage.WriteString("2DFS")
+
+	var a *llb.FileAction
+
+	src := cfg.params.SourcePaths[0]
+	if !strings.Contains(src, ".tar.gz") {
+		return errors.Wrap(err, "2DFS input must be a .tar.gz file")
+	}
+	commitMessage.WriteString(" " + src)
+	src, err = system.NormalizePath("/", src, d.platform.OS, false)
+	if err != nil {
+		return errors.Wrap(err, "removing drive letter")
+	}
+
+	opts := append([]llb.CopyOption{&llb.CopyInfo{
+		FollowSymlinks:      false,
+		CopyDirContentsOnly: true,
+		AttemptUnpack:       true,
+		CreateDestPath:      true,
+		AllowWildcard:       true,
+		AllowEmptyWildcard:  true,
+	}}, copyOpt...)
+
+	a = llb.Copy(cfg.source, src, dest, opts...)
+
+	commitMessage.WriteString(" " + cfg.params.DestPath)
+
+	platform := cfg.opt.targetPlatform
+	if d.platform != nil {
+		platform = *d.platform
+	}
+
+	env, err := d.state.Env(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	name := uppercaseCmd(processCmdEnv(cfg.opt.shlex, cfg.cmdToPrint.String(), env))
+	fileOpt := []llb.ConstraintsOpt{
+		llb.WithCustomName(prefixCommand(d, name, d.prefixPlatform, &platform, env)),
+		location(cfg.opt.sourceMap, cfg.location),
+	}
+	if d.ignoreCache {
+		fileOpt = append(fileOpt, llb.IgnoreCache)
+	}
+
+	// cfg.opt.llbCaps can be nil in unit tests
+	if cfg.opt.llbCaps != nil && cfg.opt.llbCaps.Supports(pb.CapMergeOp) == nil && cfg.link && cfg.chmod == "" {
+		pgID := identity.NewID()
+		d.cmdIndex-- // prefixCommand increases it
+		pgName := prefixCommand(d, name, d.prefixPlatform, &platform, env)
+
+		copyOpts := []llb.ConstraintsOpt{
+			llb.Platform(*d.platform),
+		}
+		copy(copyOpts, fileOpt)
+		copyOpts = append(copyOpts, llb.ProgressGroup(pgID, pgName, true))
+
+		var mergeOpts []llb.ConstraintsOpt
+		copy(mergeOpts, fileOpt)
+		d.cmdIndex--
+		mergeOpts = append(mergeOpts, llb.ProgressGroup(pgID, pgName, false), llb.WithDescription(map[string]string{"2dfs": "2dfs-test-description"}), llb.WithCustomName(prefixCommand(d, "LINK "+name, d.prefixPlatform, &platform, env)))
+		d.state = d.state.WithOutput(llb.Merge([]llb.State{d.state, llb.Scratch().File(a, copyOpts...)}, mergeOpts...).Output())
+	} else {
+		d.state = d.state.File(a, fileOpt...)
+	}
+
+	return commitToHistory(&d.image, commitMessage.String(), true, &d.state, d.epoch)
 }

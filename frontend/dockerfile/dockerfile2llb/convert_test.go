@@ -50,6 +50,16 @@ ENV FOO bar
 FROM foo
 COPY --from=foo f1 /
 COPY --from=0 f2 /
+2DFS test.tar.gz dest/
+	`
+	_, _, _, err = Dockerfile2LLB(appcontext.Context(), []byte(df), ConvertOpt{})
+	assert.NoError(t, err)
+
+	df = `FROM scratch AS foo
+ENV FOO bar
+FROM foo
+COPY --from=foo f1 /
+COPY --from=0 f2 /
 	`
 	_, _, _, err = Dockerfile2LLB(appcontext.Context(), []byte(df), ConvertOpt{
 		Config: dockerui.Config{
